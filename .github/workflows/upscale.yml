@@ -21,39 +21,54 @@ jobs:
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ inputs.bot_token }}/sendMessage" \
             -d chat_id="${{ inputs.chat_id }}" \
-            -d text="⚡️ سرور قدرتمند گیت‌هاب (16GB RAM) روشن شد!\n⚙️ در حال استخراج فریم‌ها و بازسازی به کیفیت 4K با هوش مصنوعی..."
+            -d text="⚡️ سرور قدرتمند گیت‌هاب روشن شد!\n⚙️ در حال آماده‌سازی موتور هوش مصنوعی CPU (PyTorch Real-ESRGAN)..."
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
 
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg wget
-
-      - name: Download Real-ESRGAN Vulkan
-        run: |
-          wget -q https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip
-          unzip -q realesrgan-ncnn-vulkan-20220424-ubuntu.zip
-          chmod +x realesrgan-ncnn-vulkan
+          pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install --no-cache-dir basicsr facexlib gfpgan realesrgan
 
       - name: Download Video
         run: |
           wget -q -O input.mp4 "${{ inputs.video_url }}"
 
-      - name: Process Video to 4K
+      - name: Process Video to 4K (PyTorch CPU)
         run: |
-          mkdir -p in_frames out_frames
-          ffmpeg -y -i input.mp4 -vn -c:a copy audio.aac || true
-          ffmpeg -y -i input.mp4 -qscale:v 2 in_frames/frame_%05d.jpg
-          ./realesrgan-ncnn-vulkan -i in_frames -o out_frames -n realesr-animevideov3 -s 4 || \
-          ./realesrgan-ncnn-vulkan -i in_frames -o out_frames -n realesrgan-x4plus -s 4
-          if [ -f audio.aac ]; then
-            ffmpeg -y -framerate 30 -i out_frames/frame_%05d.jpg -i audio.aac -c:v libx264 -pix_fmt yuv420p -crf 18 -c:a copy output_4k.mp4
-          else
-            ffmpeg -y -framerate 30 -i out_frames/frame_%05d.jpg -c:v libx264 -pix_fmt yuv420p -crf 18 output_4k.mp4
-          fi
+          python -c "
+          import os, subprocess, torch
+          from realesrgan import RealESRGANer
+          from basicsr.archs.rrdbnet_arch import RRDBNet
+
+          print('Running PyTorch Real-ESRGAN on CPU...')
+          cmd = [
+              'python', '-m', 'realesrgan.inference_realesrgan_video',
+              '-i', 'input.mp4',
+              '-o', 'output_4k.mp4',
+              '-n', 'RealESRGAN_x4plus',
+              '-s', '4',
+              '--device', 'cpu'
+          ]
+          subprocess.run(cmd, check=True)
+          "
 
       - name: Send 4K Video to Telegram
+        if: success()
         run: |
           curl -F chat_id="${{ inputs.chat_id }}" \
                -F document=@output_4k.mp4 \
-               -F caption="💎 ویدیوی شما با سرور 16GB گیت‌هاب به کیفیت 4K واقعی ارتقا یافت!" \
+               -F caption="💎 ویدیوی شما با سرور گیت‌هاب با موفقیت به کیفیت 4K ارتقا یافت!" \
                "https://api.telegram.org/bot${{ inputs.bot_token }}/sendDocument"
+
+      - name: Notify failure
+        if: failure()
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ inputs.bot_token }}/sendMessage" \
+            -d chat_id="${{ inputs.chat_id }}" \
+            -d text="❌ متاسفانه پردازش ویدیو در سرور گیت‌هاب با خطا مواجه شد."
