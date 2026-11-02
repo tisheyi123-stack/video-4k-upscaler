@@ -21,7 +21,7 @@ jobs:
         run: |
           curl -s -X POST "https://api.telegram.org/bot${{ inputs.bot_token }}/sendMessage" \
             -d chat_id="${{ inputs.chat_id }}" \
-            -d text="⚡️ سرور قدرتمند گیت‌هاب روشن شد!\n⚙️ در حال آماده‌سازی موتور هوش مصنوعی CPU (PyTorch Real-ESRGAN)..."
+            -d text="⚡️ سرور گیت‌هاب روشن شد!\n⚙️ در حال بارگذاری مدل و بازسازی فریم‌ها به 4K..."
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -32,7 +32,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg wget
-          pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install --no-cache-dir torch==2.0.1 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cpu
           pip install --no-cache-dir basicsr facexlib gfpgan realesrgan
 
       - name: Download Video
@@ -42,18 +42,17 @@ jobs:
       - name: Process Video to 4K (PyTorch CPU)
         run: |
           python -c "
-          import os, subprocess, torch
-          from realesrgan import RealESRGANer
-          from basicsr.archs.rrdbnet_arch import RRDBNet
+          import sys
+          import torchvision.transforms.functional as F
+          sys.modules['torchvision.transforms.functional_tensor'] = F
 
-          print('Running PyTorch Real-ESRGAN on CPU...')
+          import subprocess
           cmd = [
               'python', '-m', 'realesrgan.inference_realesrgan_video',
               '-i', 'input.mp4',
               '-o', 'output_4k.mp4',
-              '-n', 'RealESRGAN_x4plus',
-              '-s', '4',
-              '--device', 'cpu'
+              '-n', 'realesr-animevideov3',
+              '-s', '4'
           ]
           subprocess.run(cmd, check=True)
           "
